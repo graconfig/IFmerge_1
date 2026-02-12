@@ -34,11 +34,21 @@ def _extract_cell(cell_data, cell_rich) -> CellData:
     对于富文本单元格，只保留没有删除线的文本片段。
     当TextBlock的strike属性为None时，继承单元格级别的字体删除线属性。
     对于普通单元格，检查整个单元格的字体是否有删除线。
+    同时检测对角叉（diagonalUp + diagonalDown）作为删除标记。
 
     Args:
         cell_data: data_only=True 读取的单元格（含计算值）
         cell_rich: rich_text=True 读取的单元格（含富文本信息）
     """
+    # 检查对角叉（X形交叉线）作为删除标记
+    has_diagonal_cross = (
+        cell_rich.border
+        and cell_rich.border.diagonalUp
+        and cell_rich.border.diagonalDown
+    )
+    if has_diagonal_cross:
+        return CellData(value=None, is_strikethrough=True)
+
     rich_val = cell_rich.value
 
     # 富文本单元格：逐段检查删除线
