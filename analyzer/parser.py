@@ -35,7 +35,7 @@ class InterfaceRecord:
 _REQUIRED_FIELDS = ['document_number', 'if_name']
 
 
-def parse_response(tool_result: dict, file_name: str) -> list[InterfaceRecord]:
+def parse_response(tool_result: dict, file_name: str ,sheet_name: str = None) -> list[InterfaceRecord]:
     """AI応答を解析し、InterfaceRecordリストを返す。
 
     SAPAICoreClient.converse_with_tools()が返す辞書を解析する。

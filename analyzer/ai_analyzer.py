@@ -29,12 +29,12 @@ def build_analysis_prompt(cleaned_text: str, file_name: str) -> str:
     Validates: Requirements 3.1
     """
     return f"""以下はSAP Interface設計書（{file_name}）の内容です。
-この設計書からEBSテーブルの項目情報を抽出してください。
+この設計書からEBSテーブルの項目と見れらる情報を抽出してください。
 
 設計書の内容：
 {cleaned_text}
 
-上記の内容から、以下の情報を抽出してください：
+上記の内容から、以下の情報を抽出してください、抽出できない情報は空でよい：
 1. 文書管理番号（document_number）: 設計書の文書管理番号（例: BDN-EPD-OF-093）
 2. IF名（if_name）: インターフェース名称
 3. EBSテーブル名（ebs_table_name）: EBSテーブルの日本語名称
@@ -44,12 +44,13 @@ def build_analysis_prompt(cleaned_text: str, file_name: str) -> str:
 7. 桁数（digit_count）: 各項目の桁数
 
 重要なルール：
+- 1ファイルに複数IFが存在する場合があります。一セルに複行項目を記載する場合があります。それぞれ分割して出力してください。
 - 「エクスポート項目」等のシートにある項目ID（英語カラム名）を1つずつ漏れなく抽出すること。
-- 項目名が項目IDの次の行にある場合は、その日本語名称を対応する項目名として使用すること。
-- 同じNo（番号）に複数の項目IDが属している場合（No列が空白で続く行）は、それらを1行にまとめること：
+- 同じNo（番号）に複数の項目IDが属している場合（No列が空白で続く行）は、それらを分割して複数行にすること：
   * 項目ID（item_id）: 複数の項目IDをカンマ区切りで連結（例: "ALLOCATE_DEPT,ALLOCATE_WIP_ENTITY_NAME,ALLOCATE_LINE_NUMBER"）
   * 項目名（item_name）: 複数の項目名をカンマ区切りで連結（例: "充当部門,充当製番,充当行番号"）
   * 桁数（digit_count）: 複数の桁数をカンマ区切りで連結（例: "4,10,3"）
+- 項目名はEBSの項目名のため、注意してください。（例：エクスポート項目などを参照しないこと。IF項目のみを出力、処理概要は出力しない）
 - 削除マーク（対角叉など）がある項目は除外すること。
 
 extract_interface_infoツールを使って結果を返してください。"""

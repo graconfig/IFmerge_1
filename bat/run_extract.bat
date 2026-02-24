@@ -4,6 +4,14 @@ echo ========================================
 echo Excel Interface Analyzer
 echo ========================================
 echo.
+REM Get script directory and project root
+set SCRIPT_DIR=%~dp0
+set SCRIPT_DIR=%SCRIPT_DIR:~0,-1%
+for %%I in ("%SCRIPT_DIR%") do set PROJECT_ROOT=%%~dpI
+set PROJECT_ROOT=%PROJECT_ROOT:~0,-1%
+
+REM Change to project root
+cd /d "%PROJECT_ROOT%"
 
 REM Check if Python is installed
 python --version >nul 2>&1

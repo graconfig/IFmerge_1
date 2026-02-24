@@ -1,0 +1,7 @@
+{
+  "AICORE_AUTH_URL": "https://genai-europe-aws-16rxv3mh.authentication.eu10.hana.ondemand.com",
+  "AICORE_CLIENT_ID": "sb-4ba914fb-04d8-406b-ac7c-42a33bcc8f89!b549118|aicore!b540",
+  "AICORE_CLIENT_SECRET": "30c733f4-1d27-4891-9633-c3125e0296a6$59d5zVVBHoXVGk_T-A5CAhelitpx5XkOYImEmubfp0w=",
+  "AICORE_RESOURCE_GROUP": "default",
+  "AICORE_BASE_URL": "https://api.ai.prod.eu-central-1.aws.ml.hana.ondemand.com/v2"
+}

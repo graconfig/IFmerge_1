@@ -2,7 +2,6 @@
 
 openpyxlを使用してExcelファイルを読み取り、各セルの値と削除線情報を抽出する。
 リッチテキスト（部分削除線）にも対応し、削除線のない部分のみを保持する。
-.xls形式のファイルは自動的に.xlsxに変換してから処理する。
 """
 
 import logging
@@ -28,47 +27,6 @@ class SheetData:
     name: str
     rows: list[list[CellData]]
 
-
-def _convert_xls_to_xlsx(xls_path: Path) -> Path:
-    """将.xls文件转换为临时的.xlsx文件（保留完整格式）。
-    
-    Args:
-        xls_path: .xls文件路径
-        
-    Returns:
-        临时.xlsx文件路径
-    """
-    try:
-        import win32com.client
-    except ImportError:
-        raise ImportError(
-            ".xls形式のファイルを処理するには pywin32 が必要です。\n"
-            "インストールしてください: pip install pywin32"
-        )
-    
-    logger.info(f".xls形式を検出: {xls_path.name} を .xlsx に変換中...")
-    
-    excel = None
-    try:
-        excel = win32com.client.Dispatch("Excel.Application")
-        excel.Visible = False
-        excel.DisplayAlerts = False  # 禁用警告对话框
-        
-        temp_dir = _get_temp_dir(xls_path)
-        temp_path = temp_dir / f"{xls_path.stem}_temp.xlsx"
-        
-        # 打开并转换
-        wb = excel.Workbooks.Open(str(xls_path.absolute()))
-        wb.SaveAs(str(temp_path.absolute()), FileFormat=51)  # 51 = xlsx
-        wb.Close(SaveChanges=False)
-        
-        logger.info(f"変換完了: {temp_path}")
-        return temp_path
-        
-    finally:
-        # 确保Excel进程正确关闭
-        if excel:
-            excel.Quit()
 
 def _extract_cell(cell_data, cell_rich) -> CellData:
     """从单元格提取值，处理富文本中的部分删除线。
@@ -150,8 +108,6 @@ def read_excel(file_path: Path) -> list[SheetData]:
     - data_only=True: 获取公式的计算结果值
     - rich_text=True: 获取富文本信息（部分删除线）
     - data_only=False (无rich_text): 获取普通单元格的字体格式
-    
-    如果是.xls格式，会自动转换为临时的.xlsx文件后处理。
 
     Args:
         file_path: Excel文件的路径
@@ -162,53 +118,16 @@ def read_excel(file_path: Path) -> list[SheetData]:
     Raises:
         Exception: 当文件无法打开或读取时抛出异常
     """
-    temp_file = None
-    try:
-        # 检查文件格式
-        if file_path.suffix.lower() == '.xls':
-            temp_file = _convert_xls_to_xlsx(file_path)
-            file_to_read = temp_file
-        else:
-            file_to_read = file_path
-        
-        wb_data = load_workbook(file_to_read, data_only=True)
-        wb_rich = load_workbook(file_to_read, rich_text=True)
+    wb_data = load_workbook(file_path, data_only=True)
+    wb_rich = load_workbook(file_path, rich_text=True)
 
-        sheets = []
-        for ws_data, ws_rich in zip(wb_data.worksheets, wb_rich.worksheets):
-            rows = []
-            for row_data, row_rich in zip(ws_data.iter_rows(), ws_rich.iter_rows()):
-                cells = []
-                for cd, cr in zip(row_data, row_rich):
-                    cells.append(_extract_cell(cd, cr))
-                rows.append(cells)
-            sheets.append(SheetData(name=ws_data.title, rows=rows))
-        
-        return sheets
-        
-    finally:
-        # 清理临时文件
-        if temp_file and temp_file.exists():
-            try:
-                # temp_file.unlink()
-                logger.debug(f"临時ファイルを削除: {temp_file}")
-            except Exception as e:
-                logger.warning(f"临時ファイルの削除に失敗: {e}")
-
-def _get_temp_dir(input_file: Path) -> Path:
-    """获取或创建temp目录（与input文件夹同级）。
-    
-    Args:
-        input_file: 输入文件路径
-        
-    Returns:
-        temp目录路径
-    """
-    # 获取input文件夹的父目录
-    parent_dir = input_file.parent
-    temp_dir = parent_dir / 'temp'
-    
-    # 创建temp目录（如果不存在）
-    temp_dir.mkdir(exist_ok=True)
-    
-    return temp_dir
+    sheets = []
+    for ws_data, ws_rich in zip(wb_data.worksheets, wb_rich.worksheets):
+        rows = []
+        for row_data, row_rich in zip(ws_data.iter_rows(), ws_rich.iter_rows()):
+            cells = []
+            for cd, cr in zip(row_data, row_rich):
+                cells.append(_extract_cell(cd, cr))
+            rows.append(cells)
+        sheets.append(SheetData(name=ws_data.title, rows=rows))
+    return sheets
