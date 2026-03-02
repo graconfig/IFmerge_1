@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+
 from dotenv import load_dotenv
 
 
@@ -13,6 +14,8 @@ class AppConfig:
     deployment_id: str
     input_dir: str
     output_dir: str
+    phase1_head_rows: int
+    max_chunk_rows: int
 
 
 def load_config() -> AppConfig:
@@ -36,4 +39,6 @@ def load_config() -> AppConfig:
         deployment_id=os.getenv('AICORE_DEPLOYMENT_ID', ''),
         input_dir=os.getenv('INPUT_DIR', 'input'),
         output_dir=os.getenv('OUTPUT_DIR', 'output'),
+        phase1_head_rows=int(os.getenv('PHASE1_HEAD_ROWS', '30')),
+        max_chunk_rows=int(os.getenv('MAX_CHUNK_ROWS', '100')),
     )

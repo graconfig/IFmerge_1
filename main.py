@@ -9,19 +9,15 @@
 
 import sys
 
+from analyzer.ai_analyzer import analyze_file
+from analyzer.cleaner import clean_sheet_data
 from analyzer.config import load_config
-from analyzer.scanner import scan_excel_files
-from analyzer.reader import read_excel
-from analyzer.cleaner import clean_sheet_data, format_as_text
-from analyzer.ai_analyzer import (
-    build_analysis_prompt,
-    build_tool_definition,
-    analyze_with_retry,
-)
-from analyzer.parser import parse_response
-from analyzer.writer import write_output_excel
 from analyzer.logger import setup_logger
+from analyzer.parser import parse_response
+from analyzer.reader import read_excel
 from analyzer.sap_client import SAPAICoreClient
+from analyzer.scanner import scan_excel_files
+from analyzer.writer import write_output_excel
 
 
 def main() -> None:
@@ -59,10 +55,9 @@ def main() -> None:
     logger.info("Excel ファイルを %d 件検出しました。処理を開始します。", total_files)
 
     # ------------------------------------------------------------------
-    # 4. SAPAICoreClient インスタンスとツール定義を準備
+    # 4. SAPAICoreClient インスタンスを準備
     # ------------------------------------------------------------------
     client = SAPAICoreClient(config)
-    tools = build_tool_definition()
 
     # ------------------------------------------------------------------
     # 5. ファイルごとの処理ループ（Req 1.2: 逐個順次処理）
@@ -95,15 +90,17 @@ def main() -> None:
                 failure_count += 1
                 continue
 
-            # 5c. テキストフォーマット → プロンプト構築（Req 2.4, 3.1）
-            cleaned_text = format_as_text(cleaned_sheets)
-            prompt = build_analysis_prompt(cleaned_text, file_name)
+            # 5c. 二段階AI分析（Phase1: 固定情報識別, Phase2: 項目抽出）
+            tool_results = analyze_file(
+                client, cleaned_sheets, file_name,
+                phase1_head_rows=config.phase1_head_rows,
+                max_chunk_rows=config.max_chunk_rows,
+            )
 
-            # 5d. AI 分析（Req 3.2, 3.4 — リトライ付き）
-            tool_result = analyze_with_retry(client, prompt, tools)
-
-            # 5e. 応答解析（Req 3.3, 3.5）
-            records = parse_response(tool_result, file_name)
+            # 5d. 応答解析（Req 3.3, 3.5）
+            records = []
+            for tool_result in tool_results:
+                records.extend(parse_response(tool_result, file_name))
             all_records.extend(records)
 
             logger.info(
