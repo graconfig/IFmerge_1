@@ -50,17 +50,17 @@ def write_output_excel(records: list[InterfaceRecord], output_dir: str) -> str:
     ]
     ws.append(headers)
 
-    # Req 4.3: 各InterfaceRecordを1行として書き出す
+    # Req 4.3: 各InterfaceRecordを1行として書き出す（空白セルは"-"で埋める）
     for i, record in enumerate(records, 1):
         ws.append([
             i,
-            record.document_number,
-            record.if_name,
-            record.ebs_table_name,
-            record.ebs_table_id,
-            record.item_id,
-            record.item_name,
-            record.digit_count,
+            record.document_number or '-',
+            record.if_name or '-',
+            record.ebs_table_name or '-',
+            record.ebs_table_id or '-',
+            record.item_id or '-',
+            record.item_name or '-',
+            record.digit_count or '-',
         ])
 
     wb.save(filepath)
