@@ -2,4 +2,8 @@
 input/
 output/
 CHANGELOG.md
+venv/__pycache__/
+*.pyc
+*.pyo
 venv/
+.env
