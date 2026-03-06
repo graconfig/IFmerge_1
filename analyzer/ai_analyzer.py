@@ -19,19 +19,23 @@ _DEFAULT_MAX_CHUNK_ROWS = 100
 
 
 def build_phase1_prompt(sheet_head_text: str, file_name: str) -> str:
-    """Phase 1: 全シートの先頭部分から固定情報とデータシートを識別する。"""
+    """Phase 1: 全シートの先頭部分から固定情報・データシート・列構造を識別する。"""
     return f"""以下はSAP Interface設計書（{file_name}）の各シートの先頭部分です。
+各行の各セルは [列番号]値 の形式で表示されています。
 
 {sheet_head_text}
 
 以下を識別してください：
 1. document_number: 文書管理番号（例: BDN-EPD-OF-093）
 2. if_name: インターフェース名称
-3. data_sheets: 項目ID・項目名などのデータ行を含むシート名のリスト
-   （「エクスポート項目」「インポート項目」「データ項目」等、
-    EBSテーブルの項目一覧が記載されているシートのみ。
-    「表紙」「処理概要」「変更履歴」等は除外すること）
-4. 各データシートについて、データ行（項目一覧）が始まる行番号（0始まり）
+3. data_sheets: EBSテーブルの項目一覧が記載されているシートのみ
+   （「エクスポート項目」「インポート項目」「データ項目」等。
+    「表紙」「処理概要」「変更履歴」「テーブル一覧」等は除外すること）
+4. 各データシートについて：
+   - data_start_row: データ行（項目一覧）が始まる行番号（0始まり）
+   - col_table_id: EBSテーブルID（英語）が入っている列番号
+   - col_item_id: 項目ID（英語カラム名）が入っている列番号
+   - col_digit: 桁数（バイト長）が入っている列番号（不明な場合は-1）
 
 extract_doc_metaツールを使って結果を返してください。"""
 
@@ -41,7 +45,7 @@ def build_phase1_tool() -> list[dict]:
     return [{
         'toolSpec': {
             'name': 'extract_doc_meta',
-            'description': '設計書の固定情報とデータシートを識別する',
+            'description': '設計書の固定情報・データシート・列構造を識別する',
             'inputSchema': {
                 'json': {
                     'type': 'object',
@@ -68,8 +72,23 @@ def build_phase1_tool() -> list[dict]:
                                         'type': 'integer',
                                         'description': 'データ行開始行番号（0始まり）',
                                     },
+                                    'col_table_id': {
+                                        'type': 'integer',
+                                        'description': 'EBSテーブルID列番号',
+                                    },
+                                    'col_item_id': {
+                                        'type': 'integer',
+                                        'description': '項目ID列番号',
+                                    },
+                                    'col_digit': {
+                                        'type': 'integer',
+                                        'description': '桁数列番号（不明は-1）',
+                                    },
                                 },
-                                'required': ['sheet_name', 'data_start_row'],
+                                'required': [
+                                    'sheet_name', 'data_start_row',
+                                    'col_table_id', 'col_item_id',
+                                ],
                             },
                         },
                     },
@@ -81,33 +100,47 @@ def build_phase1_tool() -> list[dict]:
 
 
 def build_phase2_prompt(doc_number: str, if_name: str,
-                        chunk_text: str, file_name: str) -> str:
+                        chunk_text: str, file_name: str,
+                        col_table_id: int = -1, col_item_id: int = -1,
+                        col_digit: int = -1) -> str:
     """Phase 2: 固定情報をコンテキストとして、データ行チャンクから項目を抽出する。"""
+    col_info_parts = []
+    if col_table_id >= 0:
+        col_info_parts.append(f"- 列{col_table_id}: EBSテーブルID（英語）")
+    if col_item_id >= 0:
+        col_info_parts.append(f"- 列{col_item_id}: 項目ID（英語カラム名）")
+    if col_digit >= 0:
+        col_info_parts.append(f"- 列{col_digit}: 桁数")
+    col_info = "\n".join(col_info_parts) if col_info_parts else "（列情報なし）"
+
     return f"""以下はSAP Interface設計書（{file_name}）のデータ行の一部です。
+各セルは [列番号]値 の形式で表示されています。
 
 固定情報（全行共通）：
 - 文書管理番号: {doc_number}
 - IF名: {if_name}
 
+列の意味：
+{col_info}
+
 データ行：
 {chunk_text}
 
 上記のデータ行から、各項目を抽出してください。抽出できない情報は空でよい：
-1. ebs_table_name: EBSテーブルの日本語名称
-2. ebs_table_id: EBSテーブルの英語ID
-3. item_id: 各項目の英語ID/カラム名
-4. item_name: 各項目の日本語名称
-5. digit_count: 各項目の桁数
+1. ebs_table_id: EBSテーブルの英語ID（列{col_table_id}から取得）
+2. item_id: 各項目の英語ID/カラム名（列{col_item_id}から取得、括弧より前の英語部分のみ）
+3. item_name: 項目IDと同じセル（列{col_item_id}）内に全角括弧（）または半角括弧()がある場合のみ、その括弧内の文字列を使用する。括弧がない場合は必ず空にすること。他の列の値は絶対に使用しないこと。
+4. digit_count: 各項目の桁数（列{col_digit}から取得）
 
 重要なルール：
-- 一セルに複行項目を記載する場合があります。それぞれ分割して出力してください。
+- 一セルに複数行の項目が記載されている場合は、それぞれ分割して出力すること。
 - 項目ID（英語カラム名）を1つずつ漏れなく抽出すること。
 - 同じNo（番号）に複数の項目IDが属している場合（No列が空白で続く行）は、1行にまとめること：
   * 項目ID: カンマ区切りで連結
   * 項目名: カンマ区切りで連結
   * 桁数: カンマ区切りで連結
-- EBSテーブル名/IDはデータ行から読み取ること。途中で変わる場合は変わった後の値を使用。
-- 項目名はEBSの項目名のため、注意してください。IF項目のみを出力、処理概要は出力しない。
+- EBSテーブルIDはデータ行から読み取ること。途中で変わる場合は変わった後の値を使用。
+- IF項目のみを出力すること。処理概要などの説明行は出力しないこと。
 - 文書管理番号とIF名は上記の固定情報をそのまま使用すること。
 
 extract_interface_infoツールを使って結果を返してください。"""
@@ -203,26 +236,49 @@ def analyze_with_retry(client: SAPAICoreClient, prompt: str,
 
 def _format_sheet_head(cleaned_sheets: list,
                        max_rows: int = _DEFAULT_PHASE1_HEAD_ROWS) -> str:
-    """各シートの先頭N行をフォーマットする。"""
+    """各シートの先頭N行を [列番号]値 形式でフォーマットする。"""
     parts = []
     for sheet in cleaned_sheets:
         parts.append(f"=== Sheet: {sheet.name} ===")
         all_rows = ([sheet.headers] + sheet.rows
                     if sheet.headers else sheet.rows)
         for row_idx, row in enumerate(all_rows[:max_rows]):
-            non_empty = [c for c in row if c]
-            if non_empty:
-                parts.append(f"[Row {row_idx}] " + " | ".join(non_empty))
+            tagged = ["[%d]%s" % (ci, c) for ci, c in enumerate(row) if c]
+            if tagged:
+                parts.append("[Row %d] %s" % (row_idx, "  ".join(tagged)))
     return "\n".join(parts)
 
 
-def _format_data_rows(rows: list[list[str]]) -> str:
-    """データ行リストをテキストにフォーマットする。"""
+def _filter_columns(rows: list[list[str]],
+                    col_indices: list[int]) -> list[list[str]]:
+    """指定された列インデックスのみを残す。col_indicesが空の場合は全列を返す。"""
+    if not col_indices:
+        return rows
+    valid = sorted(set(i for i in col_indices if i >= 0))
+    if not valid:
+        return rows
+    result = []
+    for row in rows:
+        filtered = [row[i] if i < len(row) else '' for i in valid]
+        result.append(filtered)
+    return result
+
+
+def _format_data_rows(rows: list[list[str]],
+                      col_offset: list[int] | None = None) -> str:
+    """データ行リストを [列番号]値 形式でフォーマットする。
+
+    col_offset: 各列の元の列番号リスト（_filter_columns後の列に対応）
+    """
     parts = []
     for row in rows:
-        non_empty = [c for c in row if c]
-        if non_empty:
-            parts.append(" | ".join(non_empty))
+        tagged = []
+        for ci, cell in enumerate(row):
+            if cell:
+                orig_col = col_offset[ci] if col_offset and ci < len(col_offset) else ci
+                tagged.append("[%d]%s" % (orig_col, cell))
+        if tagged:
+            parts.append("  ".join(tagged))
     return "\n".join(parts)
 
 
@@ -282,9 +338,9 @@ def analyze_file(client: SAPAICoreClient, cleaned_sheets: list,
         doc_number, if_name, len(data_sheets_meta),
     )
 
-    # データシート名のセット
+    # データシート名のセット（data_start_row + 列情報）
     ds_map = {
-        ds['sheet_name']: ds.get('data_start_row', 0)
+        ds['sheet_name']: ds
         for ds in data_sheets_meta
     }
 
@@ -298,7 +354,16 @@ def analyze_file(client: SAPAICoreClient, cleaned_sheets: list,
                         sheet.name)
             continue
 
-        data_start = ds_map[sheet.name]
+        ds_info = ds_map[sheet.name]
+        data_start = ds_info.get('data_start_row', 0)
+        col_table_id = ds_info.get('col_table_id', -1)
+        col_item_id = ds_info.get('col_item_id', -1)
+        col_digit = ds_info.get('col_digit', -1)
+
+        # 送信する列を絞り込む（-1 は除外）
+        col_indices = [c for c in [col_table_id, col_item_id, col_digit] if c >= 0]
+        col_indices_sorted = sorted(set(col_indices))
+
         all_rows = ([sheet.headers] + sheet.rows
                     if sheet.headers else sheet.rows)
         data_rows = all_rows[data_start:]
@@ -307,16 +372,32 @@ def analyze_file(client: SAPAICoreClient, cleaned_sheets: list,
             logger.info("Sheet '%s' のデータ行が空。", sheet.name)
             continue
 
-        chunks = _split_rows_by_count(data_rows, max_rows=max_chunk_rows)
+        # 列フィルタリング
+        if col_indices_sorted:
+            filtered_rows = _filter_columns(data_rows, col_indices_sorted)
+            logger.info(
+                "Sheet '%s': 列%s に絞り込み（元%d列→%d列）",
+                sheet.name, col_indices_sorted,
+                len(data_rows[0]) if data_rows else 0,
+                len(col_indices_sorted),
+            )
+        else:
+            filtered_rows = data_rows
+            col_indices_sorted = None
+
+        chunks = _split_rows_by_count(filtered_rows, max_rows=max_chunk_rows)
         logger.info(
             "Phase 2: Sheet '%s' — %d行を%dチャンクで処理。",
-            sheet.name, len(data_rows), len(chunks),
+            sheet.name, len(filtered_rows), len(chunks),
         )
 
         for ci, chunk in enumerate(chunks, 1):
-            chunk_text = _format_data_rows(chunk)
+            chunk_text = _format_data_rows(chunk, col_offset=col_indices_sorted)
             prompt = build_phase2_prompt(
                 doc_number, if_name, chunk_text, file_name,
+                col_table_id=col_table_id,
+                col_item_id=col_item_id,
+                col_digit=col_digit,
             )
             logger.info(
                 "Phase 2: Sheet '%s' チャンク %d/%d",

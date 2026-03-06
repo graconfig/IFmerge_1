@@ -107,8 +107,8 @@ def _extract_cell(cell_data, cell_rich) -> CellData:
 def _read_xls(file_path: Path) -> list[SheetData]:
     """xlrdを使用して.xlsファイルを読み取る。
 
-    xlrdのformatting_info=Trueで削除線情報を取得する。
-    対角叉はxlrdでは検出できないため、削除線のみ対応。
+    rich_text_runlist_mapを使用して部分削除線を検出し、
+    削除線のない部分のみを保持する。
 
     Args:
         file_path: .xlsファイルのパス
@@ -125,26 +125,62 @@ def _read_xls(file_path: Path) -> list[SheetData]:
             cells = []
             for ci in range(ws.ncols):
                 cell = ws.cell(ri, ci)
+                if cell.ctype == xlrd.XL_CELL_EMPTY:
+                    cells.append(CellData(value=None, is_strikethrough=False))
+                    continue
+
                 # 値を文字列に変換
                 raw = cell.value
-                if cell.ctype == xlrd.XL_CELL_EMPTY:
-                    value = None
-                elif cell.ctype == xlrd.XL_CELL_NUMBER:
-                    # 整数の場合は小数点を除去
+                if cell.ctype == xlrd.XL_CELL_NUMBER:
                     value = str(int(raw)) if raw == int(raw) else str(raw)
                 else:
                     value = str(raw) if raw != '' else None
 
-                # 削除線チェック
+                # セルレベルの削除線
                 try:
                     xf_idx = ws.cell_xf_index(ri, ci)
                     xf = wb.xf_list[xf_idx]
-                    font = wb.font_list[xf.font_index]
-                    is_strike = bool(font.struck_out)
+                    cell_font = wb.font_list[xf.font_index]
+                    cell_strike = bool(cell_font.struck_out)
                 except Exception:
-                    is_strike = False
+                    cell_strike = False
 
-                cells.append(CellData(value=value, is_strikethrough=is_strike))
+                # 部分削除線チェック（rich text runs）
+                runs = ws.rich_text_runlist_map.get((ri, ci))
+                if runs and value:
+                    # runs: [(start_char, font_idx), ...]
+                    # 各ランの範囲を計算して削除線のない部分のみ保持
+                    kept_parts = []
+                    has_any_strike = False
+                    for run_idx, (run_start, font_idx) in enumerate(runs):
+                        run_end = (runs[run_idx + 1][0]
+                                   if run_idx + 1 < len(runs)
+                                   else len(value))
+                        segment = value[run_start:run_end]
+                        try:
+                            run_font = wb.font_list[font_idx]
+                            is_strike = bool(run_font.struck_out)
+                        except Exception:
+                            is_strike = cell_strike
+                        if is_strike:
+                            has_any_strike = True
+                        else:
+                            kept_parts.append(segment)
+
+                    text = "".join(kept_parts)
+                    if not kept_parts and has_any_strike:
+                        cells.append(CellData(value=None, is_strikethrough=True))
+                    else:
+                        cells.append(CellData(
+                            value=text if text else None,
+                            is_strikethrough=False,
+                        ))
+                else:
+                    # 通常セル：セルレベルの削除線を使用
+                    if cell_strike:
+                        cells.append(CellData(value=None, is_strikethrough=True))
+                    else:
+                        cells.append(CellData(value=value, is_strikethrough=False))
             rows.append(cells)
         sheets.append(SheetData(name=ws.name, rows=rows))
     return sheets
