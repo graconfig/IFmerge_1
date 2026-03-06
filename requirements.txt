@@ -4,3 +4,4 @@ python-dotenv>=1.0
 pytest>=7.0
 hypothesis>=6.0
 xlrd>=1.2.0
+pywin32
