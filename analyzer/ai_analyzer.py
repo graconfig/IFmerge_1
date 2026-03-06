@@ -33,6 +33,7 @@ def build_phase1_prompt(sheet_head_text: str, file_name: str) -> str:
     「表紙」「処理概要」「変更履歴」「テーブル一覧」等は除外すること）
 4. 各データシートについて：
    - data_start_row: データ行（項目一覧）が始まる行番号（0始まり）
+   - col_table_name: EBSテーブル名（日本語）が入っている列番号（不明な場合は-1）
    - col_table_id: EBSテーブルID（英語）が入っている列番号
    - col_item_id: 項目ID（英語カラム名）が入っている列番号
    - col_digit: 桁数（バイト長）が入っている列番号（不明な場合は-1）
@@ -72,6 +73,10 @@ def build_phase1_tool() -> list[dict]:
                                         'type': 'integer',
                                         'description': 'データ行開始行番号（0始まり）',
                                     },
+                                    'col_table_name': {
+                                        'type': 'integer',
+                                        'description': 'EBSテーブル名（日本語）列番号（不明は-1）',
+                                    },
                                     'col_table_id': {
                                         'type': 'integer',
                                         'description': 'EBSテーブルID列番号',
@@ -101,17 +106,18 @@ def build_phase1_tool() -> list[dict]:
 
 def build_phase2_prompt(doc_number: str, if_name: str,
                         chunk_text: str, file_name: str,
-                        col_table_id: int = -1, col_item_id: int = -1,
-                        col_digit: int = -1) -> str:
+                        col_table_name: int = -1, col_table_id: int = -1,
+                        col_item_id: int = -1, col_digit: int = -1) -> str:
     """Phase 2: 固定情報をコンテキストとして、データ行チャンクから項目を抽出する。"""
     col_info_parts = []
+    if col_table_name >= 0:
+        col_info_parts.append(f"- 列{col_table_name}: EBSテーブル名（日本語）")
     if col_table_id >= 0:
         col_info_parts.append(f"- 列{col_table_id}: EBSテーブルID（英語）")
     if col_item_id >= 0:
         col_info_parts.append(f"- 列{col_item_id}: 項目ID（英語カラム名）")
     if col_digit >= 0:
         col_info_parts.append(f"- 列{col_digit}: 桁数")
-    col_info = "\n".join(col_info_parts) if col_info_parts else "（列情報なし）"
 
     return f"""以下はSAP Interface設計書（{file_name}）のデータ行の一部です。
 各セルは [列番号]値 の形式で表示されています。
@@ -120,17 +126,15 @@ def build_phase2_prompt(doc_number: str, if_name: str,
 - 文書管理番号: {doc_number}
 - IF名: {if_name}
 
-列の意味：
-{col_info}
-
 データ行：
 {chunk_text}
 
 上記のデータ行から、各項目を抽出してください。抽出できない情報は空でよい：
-1. ebs_table_id: EBSテーブルの英語ID（列{col_table_id}から取得）
-2. item_id: 各項目の英語ID/カラム名（列{col_item_id}から取得、括弧より前の英語部分のみ）
-3. item_name: 項目IDと同じセル（列{col_item_id}）内に全角括弧（）または半角括弧()がある場合のみ、その括弧内の文字列を使用する。括弧がない場合は必ず空にすること。他の列の値は絶対に使用しないこと。
-4. digit_count: 各項目の桁数（列{col_digit}から取得）
+1. ebs_table_name: EBSテーブルの日本語名称
+2. ebs_table_id: EBSテーブルの英語ID
+3. item_id: 各項目の英語ID/カラム名
+4. item_name: 各項目の日本語名称
+5. digit_count: 各項目の桁数
 
 重要なルール：
 - 一セルに複数行の項目が記載されている場合は、それぞれ分割して出力すること。
@@ -139,9 +143,13 @@ def build_phase2_prompt(doc_number: str, if_name: str,
   * 項目ID: カンマ区切りで連結
   * 項目名: カンマ区切りで連結
   * 桁数: カンマ区切りで連結
-- EBSテーブルIDはデータ行から読み取ること。途中で変わる場合は変わった後の値を使用。
+- EBSテーブル名/IDはデータ行から読み取ること。途中で変わる場合は変わった後の値を使用。
 - IF項目のみを出力すること。処理概要などの説明行は出力しないこと。
 - 文書管理番号とIF名は上記の固定情報をそのまま使用すること。
+- セル内のノイズ除去ルール：
+  * 【履歴管理】およびそれ以降の文字列（番号・記号・丸数字含む）はすべて除去すること（例: 「契約情報　【履歴管理】④」→「契約情報」）
+  * [Vx.xx]形式のバージョン番号は除去すること（例: 「TAX代替ビュー(ID)  [V1.09]」→「TAX代替ビュー(ID)」）
+  * セルに「×」「＊」「*」などの演算記号が含まれる場合、その記号より前の英語ID部分のみを使用すること（例: 「TAX_RATE  ×  0.01」→「TAX_RATE」）
 
 extract_interface_infoツールを使って結果を返してください。"""
 
@@ -356,12 +364,13 @@ def analyze_file(client: SAPAICoreClient, cleaned_sheets: list,
 
         ds_info = ds_map[sheet.name]
         data_start = ds_info.get('data_start_row', 0)
+        col_table_name = ds_info.get('col_table_name', -1)
         col_table_id = ds_info.get('col_table_id', -1)
         col_item_id = ds_info.get('col_item_id', -1)
         col_digit = ds_info.get('col_digit', -1)
 
         # 送信する列を絞り込む（-1 は除外）
-        col_indices = [c for c in [col_table_id, col_item_id, col_digit] if c >= 0]
+        col_indices = [c for c in [col_table_name, col_table_id, col_item_id, col_digit] if c >= 0]
         col_indices_sorted = sorted(set(col_indices))
 
         all_rows = ([sheet.headers] + sheet.rows
@@ -395,6 +404,7 @@ def analyze_file(client: SAPAICoreClient, cleaned_sheets: list,
             chunk_text = _format_data_rows(chunk, col_offset=col_indices_sorted)
             prompt = build_phase2_prompt(
                 doc_number, if_name, chunk_text, file_name,
+                col_table_name=col_table_name,
                 col_table_id=col_table_id,
                 col_item_id=col_item_id,
                 col_digit=col_digit,

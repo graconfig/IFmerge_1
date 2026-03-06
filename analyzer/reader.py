@@ -152,6 +152,16 @@ def _read_xls(file_path: Path) -> list[SheetData]:
                     # 各ランの範囲を計算して削除線のない部分のみ保持
                     kept_parts = []
                     has_any_strike = False
+
+                    # 最初のrunより前のテキスト（セルレベルのフォントを継承）
+                    first_start = runs[0][0]
+                    if first_start > 0:
+                        prefix = value[:first_start]
+                        if cell_strike:
+                            has_any_strike = True
+                        else:
+                            kept_parts.append(prefix)
+
                     for run_idx, (run_start, font_idx) in enumerate(runs):
                         run_end = (runs[run_idx + 1][0]
                                    if run_idx + 1 < len(runs)
