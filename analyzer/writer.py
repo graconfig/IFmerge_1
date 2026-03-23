@@ -31,13 +31,14 @@ def write_output_excel(records: list[InterfaceRecord], output_dir: str) -> str:
 
     Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5
     """
-    # Req 4.4: output/ディレクトリが存在しない場合は自動作成
-    os.makedirs(output_dir, exist_ok=True)
+    # Req 4.4: output/extracted/ディレクトリが存在しない場合は自動作成
+    extracted_dir = os.path.join(output_dir, 'extracted')
+    os.makedirs(extracted_dir, exist_ok=True)
 
     # Req 4.5: タイムスタンプパターンでファイル名を生成
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f"EBS定義書_抽出結果_{timestamp}.xlsx"
-    filepath = os.path.join(output_dir, filename)
+    filepath = os.path.join(extracted_dir, filename)
 
     wb = Workbook()
     ws = wb.active

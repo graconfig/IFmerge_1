@@ -16,11 +16,7 @@ logger = logging.getLogger('analyzer')
 
 @dataclass
 class InterfaceRecord:
-    """Interface設計書から抽出された1行分のレコード。
-
-    出力テンプレート（②_INPUT_EBS定義書の抽出結果.xlsx）のカラム構造に対応:
-        文書管理番号 | IF名 | EBSテーブル名 | EBSテーブルID | 項目ID | 項目名 | 桁数
-    """
+    """Interface設計書から抽出された1行分のレコード。"""
 
     document_number: str
     if_name: str
@@ -29,6 +25,13 @@ class InterfaceRecord:
     item_id: str
     item_name: str
     digit_count: str
+    item_description: str = ''
+    data_type: str = ''
+    digit_decimal: str = ''
+    dev_type: str = ''
+    is_key: str = ''
+    required: str = ''
+    remarks: str = ''
 
 
 # 必須フィールド（欠落時に警告を出力するフィールド）
@@ -86,7 +89,14 @@ def parse_response(tool_result: dict, file_name: str ,sheet_name: str = None) ->
             ebs_table_id=item.get('ebs_table_id', ''),
             item_id=item.get('item_id', ''),
             item_name=item.get('item_name', ''),
+            item_description=item.get('item_description', ''),
             digit_count=item.get('digit_count', ''),
+            data_type=item.get('data_type', ''),
+            digit_decimal=item.get('digit_decimal', ''),
+            dev_type=item.get('dev_type', ''),
+            is_key=item.get('is_key', ''),
+            required=item.get('required', ''),
+            remarks=item.get('remarks', ''),
         ))
 
     return records

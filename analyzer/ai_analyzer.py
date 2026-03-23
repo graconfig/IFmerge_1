@@ -109,15 +109,6 @@ def build_phase2_prompt(doc_number: str, if_name: str,
                         col_table_name: int = -1, col_table_id: int = -1,
                         col_item_id: int = -1, col_digit: int = -1) -> str:
     """Phase 2: 固定情報をコンテキストとして、データ行チャンクから項目を抽出する。"""
-    col_info_parts = []
-    if col_table_name >= 0:
-        col_info_parts.append(f"- 列{col_table_name}: EBSテーブル名（日本語）")
-    if col_table_id >= 0:
-        col_info_parts.append(f"- 列{col_table_id}: EBSテーブルID（英語）")
-    if col_item_id >= 0:
-        col_info_parts.append(f"- 列{col_item_id}: 項目ID（英語カラム名）")
-    if col_digit >= 0:
-        col_info_parts.append(f"- 列{col_digit}: 桁数")
 
     return f"""以下はSAP Interface設計書（{file_name}）のデータ行の一部です。
 各セルは [列番号]値 の形式で表示されています。
@@ -135,6 +126,13 @@ def build_phase2_prompt(doc_number: str, if_name: str,
 3. item_id: 各項目の英語ID/カラム名
 4. item_name: 各項目の日本語名称
 5. digit_count: 各項目の桁数
+6. item_description: 項目の詳細説明（備考欄や説明欄から取得）
+7. data_type: データ型（VARCHAR2, NUMBER, DATE等）
+8. digit_decimal: 桁数（小数点以下）
+9. dev_type: 標準/追加開発
+10. is_key: キー項目（●など）
+11. required: 必須/任意
+12. remarks: 備考
 
 重要なルール：
 - 一セルに複数行の項目が記載されている場合は、それぞれ分割して出力すること。
@@ -150,8 +148,10 @@ def build_phase2_prompt(doc_number: str, if_name: str,
   * 【履歴管理】およびそれ以降の文字列（番号・記号・丸数字含む）はすべて除去すること（例: 「契約情報　【履歴管理】④」→「契約情報」）
   * [Vx.xx]形式のバージョン番号は除去すること（例: 「TAX代替ビュー(ID)  [V1.09]」→「TAX代替ビュー(ID)」）
   * セルに「×」「＊」「*」などの演算記号が含まれる場合、その記号より前の英語ID部分のみを使用すること（例: 「TAX_RATE  ×  0.01」→「TAX_RATE」）
+  * 項目IDセルの値が演算記号のみ、または演算記号で始まる場合（英語IDが含まれない場合）はその行をスキップすること
 
 extract_interface_infoツールを使って結果を返してください。"""
+
 
 
 def build_tool_definition() -> list[dict]:
@@ -192,11 +192,39 @@ def build_tool_definition() -> list[dict]:
                                     },
                                     'item_name': {
                                         'type': 'string',
-                                        'description': '項目名',
+                                        'description': '項目名（日本語）',
+                                    },
+                                    'item_description': {
+                                        'type': 'string',
+                                        'description': '項目説明（項目の詳細説明）',
                                     },
                                     'digit_count': {
                                         'type': 'string',
                                         'description': '桁数',
+                                    },
+                                    'data_type': {
+                                        'type': 'string',
+                                        'description': 'データ型（VARCHAR2, NUMBER, DATE等）',
+                                    },
+                                    'digit_decimal': {
+                                        'type': 'string',
+                                        'description': '桁数（小数点以下）',
+                                    },
+                                    'dev_type': {
+                                        'type': 'string',
+                                        'description': '標準/追加開発',
+                                    },
+                                    'is_key': {
+                                        'type': 'string',
+                                        'description': 'キー項目（●など）',
+                                    },
+                                    'required': {
+                                        'type': 'string',
+                                        'description': '必須/任意',
+                                    },
+                                    'remarks': {
+                                        'type': 'string',
+                                        'description': '備考',
                                     },
                                 },
                                 'required': [

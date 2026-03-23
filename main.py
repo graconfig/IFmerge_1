@@ -8,10 +8,12 @@
 """
 
 import sys
+from pathlib import Path
 
 from analyzer.ai_analyzer import analyze_file
 from analyzer.cleaner import clean_sheet_data
 from analyzer.config import load_config
+from analyzer.formatter import write_new_format
 from analyzer.logger import setup_logger
 from analyzer.parser import parse_response
 from analyzer.reader import read_excel
@@ -106,6 +108,24 @@ def main() -> None:
             logger.info(
                 "File %s: %d 件のレコードを抽出しました。", file_name, len(records),
             )
+
+            # 5e. 新フォーマット出力（ファイルごとに1つ生成）
+            if records:
+                if_name_for_file = records[0].if_name if hasattr(records[0], 'if_name') else records[0].get('if_name', '')
+                try:
+                    write_new_format(
+                        records=records,
+                        if_name=if_name_for_file,
+                        input_filename=file_name,
+                        template_path=Path(config.template_path),
+                        reference_path=Path(config.reference_path),
+                        output_dir=Path(config.output_dir),
+                    )
+                except Exception as fmt_exc:
+                    logger.warning(
+                        "File %s: 新フォーマット出力に失敗しました: %s", file_name, fmt_exc,
+                    )
+
             success_count += 1
 
         except Exception as exc:

@@ -16,6 +16,8 @@ class AppConfig:
     output_dir: str
     phase1_head_rows: int
     max_chunk_rows: int
+    template_path: str
+    reference_path: str
 
 
 def load_config() -> AppConfig:
@@ -41,4 +43,6 @@ def load_config() -> AppConfig:
         output_dir=os.getenv('OUTPUT_DIR', 'output'),
         phase1_head_rows=int(os.getenv('PHASE1_HEAD_ROWS', '30')),
         max_chunk_rows=int(os.getenv('MAX_CHUNK_ROWS', '100')),
+        template_path=os.getenv('TEMPLATE_PATH', 'reference/IF抽出_新フォーマット.xlsx'),
+        reference_path=os.getenv('REFERENCE_PATH', 'reference/本社EBS現行IF一覧.xlsx'),
     )
