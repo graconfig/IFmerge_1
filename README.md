@@ -1,13 +1,15 @@
 # Excel Interface Analyzer
 
-Excel Interface設計書（インターフェース設計書）を自動解析し、EBSテーブル定義情報を抽出するPythonツールです。SAP AI Core の Claude モデルを使用して、構造化されたデータ抽出を実現します。
+Excel Interface設計書（インターフェース設計書）を自動解析し、EBSテーブル定義情報を抽出するPythonツールです。SAP AI Core の Claude モデルを使用して、構造化されたデータ抽出と新フォーマットへの変換を実現します。
 
 ## 機能概要
 
 - **バッチ処理**: `input/` フォルダ内の複数のExcelファイルを自動検出・一括処理
-- **データクリーニング**: 削除線・対角叉などの削除マークを自動検出し、有効なデータのみを抽出
-- **AI解析**: SAP AI Core の Claude モデルによる高精度な構造化データ抽出
-- **Excel出力**: 指定フォーマットに従った結果Excelファイルの自動生成
+- **削除マーク検出**: 削除線・対角叉・部分削除線を自動検出し、有効なデータのみを抽出
+- **二段階AI解析**: Phase 1でシート構造・列情報を識別、Phase 2で項目データを抽出
+- **抽出結果出力**: EBSテーブル定義情報をExcelファイルに出力（`output/extracted/`）
+- **新フォーマット出力**: IFマッピング定義書テンプレートに自動転記（`output/formatted/`）
+- **参考ファイル連携**: `本社EBS現行IF一覧` から送受信システム情報をファジーマッチで取得
 - **リトライ機能**: API呼び出し失敗時の自動リトライ（指数バックオフ）
 
 ## システム要件
@@ -18,20 +20,13 @@ Excel Interface設計書（インターフェース設計書）を自動解析�
 
 ## インストール
 
-### 1. リポジトリのクローン
-
-```bash
-git clone <repository-url>
-cd <project-directory>
-```
-
-### 2. 依存パッケージのインストール
+### 1. 依存パッケージのインストール
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. 環境変数の設定
+### 2. 環境変数の設定
 
 プロジェクトルートに `.env` ファイルを作成し、SAP AI Core の認証情報を設定します：
 
@@ -42,6 +37,14 @@ AICORE_CLIENT_SECRET=your-client-secret
 AICORE_BASE_URL=https://api.ai.your-region.aws.ml.hana.ondemand.com/v2
 AICORE_RESOURCE_GROUP=your-resource-group
 AICORE_DEPLOYMENT_ID=your-deployment-id
+
+# オプション（デフォルト値あり）
+INPUT_DIR=input
+OUTPUT_DIR=output
+PHASE1_HEAD_ROWS=30
+MAX_CHUNK_ROWS=100
+TEMPLATE_PATH=reference/IF抽出_新フォーマット.xlsx
+REFERENCE_PATH=reference/本社EBS現行IF一覧.xlsx
 ```
 
 ## 使用方法
@@ -62,18 +65,25 @@ python main.py
 
 ```
 .
-├── analyzer/              # コアモジュール
-│   ├── ai_analyzer.py    # AI解析・プロンプト構築
+├── analyzer/
+│   ├── ai_analyzer.py    # AI解析・プロンプト構築（二段階処理）
 │   ├── cleaner.py        # データクリーニング
-│   ├── config.py         # 設定管理
+│   ├── config.py         # 設定管理（.env読み込み）
+│   ├── formatter.py      # 新フォーマットExcel出力
 │   ├── logger.py         # ログ管理
-│   ├── parser.py         # AI応答パース
-│   ├── reader.py         # Excel読取（削除線・対角叉検出）
+│   ├── parser.py         # AI応答パース・InterfaceRecord定義
+│   ├── reader.py         # Excel読取（削除線・対角叉・部分削除線検出）
 │   ├── sap_client.py     # SAP AI Core クライアント
-│   ├── scanner.py        # ファイルスキャン
-│   └── writer.py         # Excel出力
-├── input/                 # 入力フォルダ（Excelファイル配置）
-├── output/                # 出力フォルダ（結果Excel・ログ）
+│   ├── scanner.py        # ファイルスキャン（xlsx/xlsm/xls対応）
+│   └── writer.py         # 抽出結果Excel出力
+├── input/                # 入力フォルダ（設計書Excelを配置）
+├── output/
+│   ├── extracted/        # 抽出結果Excel（EBS定義書_抽出結果_*.xlsx）
+│   ├── formatted/        # 新フォーマットExcel（IF抽出_*.xlsx）
+│   └── analyzer.log      # 実行ログ
+├── reference/
+│   ├── IF抽出_新フォーマット.xlsx     # 出力テンプレート
+│   └── 本社EBS現行IF一覧.xlsx        # 送受信システム参照ファイル
 ├── main.py               # メインエントリーポイント
 ├── run.bat               # Windows実行用バッチファイル
 ├── requirements.txt      # 依存パッケージ
@@ -82,62 +92,57 @@ python main.py
 
 ## 入力ファイル形式
 
-- **対応形式**: `.xlsx`, `.xlsm`
+- **対応形式**: `.xlsx`, `.xlsm`, `.xls`
 - **削除マーク検出**:
   - 削除線（strikethrough）
   - 対角叉（diagonal cross: diagonalUp + diagonalDown）
   - 部分削除線（リッチテキスト内の一部のみ削除線）
 
-## 出力ファイル形式
+## 出力ファイル
 
-出力Excelファイルは以下のカラム構造で生成されます：
+### 抽出結果（`output/extracted/`）
+
+EBSテーブル定義情報を一覧形式で出力します。
 
 | No. | 文書管理番号 | IF名 | EBSテーブル名 | EBSテーブルID | 項目ID | 項目名 | 桁数 |
 |-----|------------|------|--------------|--------------|--------|--------|------|
 
 ファイル名: `EBS定義書_抽出結果_YYYYMMDD_HHMMSS.xlsx`
 
-## ログ
+### 新フォーマット（`output/formatted/`）
 
-実行ログは以下の場所に出力されます：
-- コンソール（標準出力）
-- `output/` フォルダ内のログファイル
+入力ファイルごとに `reference/IF抽出_新フォーマット.xlsx` テンプレートをベースに生成します。
+
+- **表紙**: IF名称・日付を記入
+- **改訂履歴**: 作成日を記入
+- **対象IF**: `本社EBS現行IF一覧` からファジーマッチで送受信システム（FROM/TO）を取得して記入
+- **IFマッピング定義**: AI抽出結果（項目名・テーブルID・項目ID・データ型・桁数・項目説明等）を記入
+
+ファイル名: `IF抽出_<元ファイル名>.xlsx`
+
+## AI解析の仕組み
+
+### Phase 1（構造識別）
+全シートの先頭 `PHASE1_HEAD_ROWS`（デフォルト30）行を一括送信し、以下を識別します：
+- 文書管理番号・IF名
+- データ項目シートの特定
+- 各シートの列構造（テーブル名列・テーブルID列・項目ID列・桁数列）
+
+### Phase 2（項目抽出）
+Phase 1 で識別した列のみに絞り込んだデータ行を `MAX_CHUNK_ROWS`（デフォルト100）行単位で分割し、以下を抽出します：
+- EBSテーブル名・テーブルID
+- 項目ID・項目名・項目説明
+- データ型・桁数・必須/任意・キー区分 等
 
 ## トラブルシューティング
 
-### Python が見つからない
-
-```
-[ERROR] Python not found. Please install Python first.
-```
-
-→ Python 3.10 以上をインストールしてください
-
-### .env ファイルが見つからない
-
-```
-[ERROR] .env file not found.
-```
-
-→ プロジェクトルートに `.env` ファイルを作成し、SAP AI Core の認証情報を設定してください
-
-### Excel ファイルが見つからない
-
-```
-[WARNING] No Excel files found in input folder.
-```
-
-→ `input/` フォルダに `.xlsx` または `.xlsm` ファイルを配置してください
-
-### AI 呼び出しエラー
-
-```
-[ERROR] AI呼び出し全リトライ失敗
-```
-
-→ `.env` の認証情報が正しいか確認してください  
-→ SAP AI Core のデプロイメントが稼働中か確認してください  
-→ ネットワーク接続を確認してください
+| 症状 | 対処 |
+|------|------|
+| `Python not found` | Python 3.10 以上をインストール |
+| `.env file not found` | プロジェクトルートに `.env` を作成 |
+| `No Excel files found` | `input/` フォルダにExcelファイルを配置 |
+| `AI呼び出し全リトライ失敗` | `.env` の認証情報・ネットワーク・デプロイメント状態を確認 |
+| 新フォーマットが生成されない | `reference/` フォルダにテンプレートと参照ファイルが存在するか確認 |
 
 ## テスト
 
@@ -155,24 +160,8 @@ pytest --cov=analyzer --cov-report=html
 ## 技術スタック
 
 - **Python 3.10+**
-- **openpyxl**: Excel読取・書込
+- **openpyxl**: xlsx/xlsm 読取・書込
+- **xlrd**: xls 読取
 - **requests**: HTTP通信
 - **python-dotenv**: 環境変数管理
 - **pytest**: ユニットテスト
-- **hypothesis**: プロパティベーステスト
-
-## ライセンス
-
-[ライセンス情報を記載]
-
-## 貢献
-
-[貢献ガイドラインを記載]
-
-## サポート
-
-問題が発生した場合は、以下の情報を含めて Issue を作成してください：
-- エラーメッセージ
-- 実行環境（OS、Python バージョン）
-- 入力ファイルのサンプル（機密情報を除く）
-- ログファイル
