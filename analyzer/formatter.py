@@ -241,13 +241,13 @@ def write_new_format(
     _fill_kaitei(wb['改訂履歴'], today)
     _fill_taisho_if(wb['対象IF'], if_name, matched)
 
-    # SAP の方向を判定（元の from/to 値に EBS が含まれるかで判断）
+    # SAP の方向を判定（置換後の from/to 値に SAP が含まれるかで判断）
     sap_direction = "from"
     for row in matched:
-        if re.search(r'(?i)EBS', row['from']):
+        if 'SAP' in _replace_ebs(row['from']).upper():
             sap_direction = "from"
             break
-        if re.search(r'(?i)EBS', row['to']):
+        if 'SAP' in _replace_ebs(row['to']).upper():
             sap_direction = "to"
             break
 
