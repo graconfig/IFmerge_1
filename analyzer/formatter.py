@@ -88,6 +88,11 @@ def _fill_kaitei(ws, today: date) -> None:
     ws['G2'] = today
 
 
+def _replace_ebs(value: str) -> str:
+    """値中の EBS（大小写不敏感）を SAP に置換する。"""
+    return re.sub(r'(?i)EBS', 'SAP', value)
+
+
 def _fill_taisho_if(ws, if_name: str, matched_rows: list[dict]) -> None:
     """対象IFシートを記入する。Row 6 以降に書き込む（サンプル行を上書き）。"""
     START_ROW = 6
@@ -106,8 +111,8 @@ def _fill_taisho_if(ws, if_name: str, matched_rows: list[dict]) -> None:
         ws[f'B{r}'] = '別途採番予定'
         ws[f'C{r}'] = if_name
         ws[f'E{r}'] = '別途採番予定'
-        ws[f'F{r}'] = row['from']
-        ws[f'G{r}'] = row['to']
+        ws[f'F{r}'] = _replace_ebs(row['from'])
+        ws[f'G{r}'] = _replace_ebs(row['to'])
 
 
 def _copy_row_style(ws, src_row: int, dst_row: int) -> None:
@@ -126,9 +131,12 @@ def _copy_row_style(ws, src_row: int, dst_row: int) -> None:
         ws.row_dimensions[dst_row].height = ws.row_dimensions[src_row].height
 
 
-def _fill_mapping(ws, records: list) -> None:
+def _fill_mapping(ws, records: list, sap_direction: str = "from") -> None:
     """IFマッピング定義シートを記入する。Row 5 以降に書き込む。
     テンプレートの最終行を超える場合は Row5 のスタイルをコピーする。
+
+    sap_direction: "from" の場合は左側 From 区域（C~M列）に書き込む。
+                   "to" の場合は右側 To 区域（S~AC列）に書き込む。
     """
     START_ROW = 5
     TEMPLATE_LAST_ROW = ws.max_row
@@ -138,6 +146,8 @@ def _fill_mapping(ws, records: list) -> None:
             return rec.get(field) or ''
         return getattr(rec, field, '') or ''
 
+    use_to_side = sap_direction.lower() == "to"
+
     for i, rec in enumerate(records):
         r = START_ROW + i
         # 常にRow5のスタイルをコピーし、既存の値もクリアする
@@ -146,17 +156,29 @@ def _fill_mapping(ws, records: list) -> None:
         for col_idx in range(1, ws.max_column + 1):
             ws.cell(row=r, column=col_idx).value = None
         ws[f'B{r}'] = i + 1
-        ws[f'C{r}'] = _get(rec, 'item_name')         # 項目名
-        ws[f'D{r}'] = _get(rec, 'dev_type')           # 標準/追加開発
-        ws[f'E{r}'] = _get(rec, 'is_key')             # キー
-        ws[f'F{r}'] = _get(rec, 'required')           # 必須/任意
-        ws[f'G{r}'] = _get(rec, 'ebs_table_id')       # テーブルID
-        ws[f'H{r}'] = _get(rec, 'item_id')            # 項目ID
-        ws[f'I{r}'] = _get(rec, 'data_type')          # データ型
-        ws[f'J{r}'] = _get(rec, 'digit_count')        # 桁数(全体)
-        ws[f'K{r}'] = _get(rec, 'digit_decimal')      # 桁数(小数点以下)
-        ws[f'L{r}'] = _get(rec, 'item_description')   # 項目説明
-        ws[f'M{r}'] = _get(rec, 'remarks')            # 備考
+        if use_to_side:
+            ws[f'S{r}'] = _get(rec, 'item_name')         # 項目名
+            ws[f'T{r}'] = _get(rec, 'dev_type')           # 標準/追加開発
+            ws[f'U{r}'] = _get(rec, 'is_key')             # キー
+            ws[f'V{r}'] = _get(rec, 'required')           # 必須/任意
+            ws[f'W{r}'] = _get(rec, 'ebs_table_id')       # テーブルID
+            ws[f'X{r}'] = _get(rec, 'item_id')            # 項目ID
+            ws[f'Y{r}'] = _get(rec, 'data_type')          # データ型
+            ws[f'Z{r}'] = _get(rec, 'digit_count')        # 桁数(全体)
+            ws[f'AA{r}'] = _get(rec, 'digit_decimal')     # 桁数(小数点以下)
+            ws[f'AB{r}'] = _get(rec, 'remarks')           # 備考
+        else:
+            ws[f'C{r}'] = _get(rec, 'item_name')         # 項目名
+            ws[f'D{r}'] = _get(rec, 'dev_type')           # 標準/追加開発
+            ws[f'E{r}'] = _get(rec, 'is_key')             # キー
+            ws[f'F{r}'] = _get(rec, 'required')           # 必須/任意
+            ws[f'G{r}'] = _get(rec, 'ebs_table_id')       # テーブルID
+            ws[f'H{r}'] = _get(rec, 'item_id')            # 項目ID
+            ws[f'I{r}'] = _get(rec, 'data_type')          # データ型
+            ws[f'J{r}'] = _get(rec, 'digit_count')        # 桁数(全体)
+            ws[f'K{r}'] = _get(rec, 'digit_decimal')      # 桁数(小数点以下)
+            ws[f'L{r}'] = _get(rec, 'item_description')   # 項目説明
+            ws[f'M{r}'] = _get(rec, 'remarks')            # 備考
 
 
 
@@ -216,7 +238,18 @@ def write_new_format(
     _fill_hyoshi(wb['表紙'], if_name, today)
     _fill_kaitei(wb['改訂履歴'], today)
     _fill_taisho_if(wb['対象IF'], if_name, matched)
-    _fill_mapping(wb['IFマッピング定義'], records)
+
+    # SAP の方向を判定（matched の from/to フィールドは置換済み）
+    sap_direction = "from"
+    for row in matched:
+        if 'SAP' in row['from'].upper():
+            sap_direction = "from"
+            break
+        if 'SAP' in row['to'].upper():
+            sap_direction = "to"
+            break
+
+    _fill_mapping(wb['IFマッピング定義'], records, sap_direction)
 
     wb.save(str(out_path))
     wb.close()
