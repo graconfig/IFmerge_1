@@ -89,8 +89,10 @@ def _fill_kaitei(ws, today: date) -> None:
 
 
 def _replace_ebs(value: str) -> str:
-    """値中の EBS（大小写不敏感）を SAP に置換する。"""
-    return re.sub(r'(?i)EBS', 'SAP', value)
+    """値に EBS（大小写不敏感）が含まれる場合、値全体を SAP に置換する。"""
+    if re.search(r'(?i)EBS', value):
+        return 'SAP'
+    return value
 
 
 def _fill_taisho_if(ws, if_name: str, matched_rows: list[dict]) -> None:
@@ -239,13 +241,13 @@ def write_new_format(
     _fill_kaitei(wb['改訂履歴'], today)
     _fill_taisho_if(wb['対象IF'], if_name, matched)
 
-    # SAP の方向を判定（matched の from/to フィールドは置換済み）
+    # SAP の方向を判定（元の from/to 値に EBS が含まれるかで判断）
     sap_direction = "from"
     for row in matched:
-        if 'SAP' in row['from'].upper():
+        if re.search(r'(?i)EBS', row['from']):
             sap_direction = "from"
             break
-        if 'SAP' in row['to'].upper():
+        if re.search(r'(?i)EBS', row['to']):
             sap_direction = "to"
             break
 
