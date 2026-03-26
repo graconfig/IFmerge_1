@@ -148,7 +148,7 @@ def _fill_mapping(ws, records: list, sap_direction: str = "from") -> None:
             return rec.get(field) or ''
         return getattr(rec, field, '') or ''
 
-    use_to_side = sap_direction.lower() == "to"
+    use_to_side = sap_direction.lower() == "from"
 
     for i, rec in enumerate(records):
         r = START_ROW + i
