@@ -142,8 +142,19 @@ def _read_xls(file_path: Path) -> list[SheetData]:
                     xf = wb.xf_list[xf_idx]
                     cell_font = wb.font_list[xf.font_index]
                     cell_strike = bool(cell_font.struck_out)
+                    # 対角叉（diagonalUp + diagonalDown）の検出
+                    # xlrd では xf.border.diag_line_type で対角線の有無を確認
+                    has_diagonal = (
+                        xf.border.diag_line_type != 0
+                        and xf.border.diag_colour_index != 0x7FFF  # 未設定色でない
+                    )
                 except Exception:
                     cell_strike = False
+                    has_diagonal = False
+
+                if has_diagonal:
+                    cells.append(CellData(value=None, is_strikethrough=True))
+                    continue
 
                 # 部分削除線チェック（rich text runs）
                 runs = ws.rich_text_runlist_map.get((ri, ci))
