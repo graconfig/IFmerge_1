@@ -8,6 +8,7 @@
 
 import logging
 import time
+from pathlib import Path
 
 from analyzer.sap_client import SAPAICoreClient
 
@@ -17,9 +18,40 @@ logger = logging.getLogger('analyzer')
 _DEFAULT_PHASE1_HEAD_ROWS = 30
 _DEFAULT_MAX_CHUNK_ROWS = 100
 
+_PROMPTS_FILE = Path('prompts.yaml')
+_templates_cache: dict | None = None
+
+
+def _load_prompt_templates() -> dict:
+    """Load prompts.yaml once and cache. Returns {} on any failure."""
+    global _templates_cache
+    if _templates_cache is not None:
+        return _templates_cache
+    try:
+        import yaml
+        with open(_PROMPTS_FILE, encoding='utf-8') as f:
+            _templates_cache = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        logger.warning("prompts.yaml が見つかりません。内蔵プロンプトを使用します。")
+        _templates_cache = {}
+    except Exception as e:
+        logger.warning(
+            "prompts.yaml の読み込みに失敗しました: %s — 内蔵プロンプトを使用します。", e,
+        )
+        _templates_cache = {}
+    return _templates_cache
+
 
 def build_phase1_prompt(sheet_head_text: str, file_name: str) -> str:
     """Phase 1: 全シートの先頭部分から固定情報・データシート・列構造を識別する。"""
+    tmpl = _load_prompt_templates().get('phase1', {}).get('template')
+    if tmpl:
+        try:
+            return tmpl.format(file_name=file_name, sheet_head_text=sheet_head_text)
+        except (KeyError, ValueError) as e:
+            logger.warning(
+                "phase1テンプレートの展開に失敗しました: %s — 内蔵プロンプトを使用します。", e,
+            )
     return f"""以下はSAP Interface設計書（{file_name}）の各シートの先頭部分です。
 各行の各セルは [列番号]値 の形式で表示されています。
 
@@ -109,7 +141,17 @@ def build_phase2_prompt(doc_number: str, if_name: str,
                         col_table_name: int = -1, col_table_id: int = -1,
                         col_item_id: int = -1, col_digit: int = -1) -> str:
     """Phase 2: 固定情報をコンテキストとして、データ行チャンクから項目を抽出する。"""
-
+    tmpl = _load_prompt_templates().get('phase2', {}).get('template')
+    if tmpl:
+        try:
+            return tmpl.format(
+                file_name=file_name, doc_number=doc_number,
+                if_name=if_name, chunk_text=chunk_text,
+            )
+        except (KeyError, ValueError) as e:
+            logger.warning(
+                "phase2テンプレートの展開に失敗しました: %s — 内蔵プロンプトを使用します。", e,
+            )
     return f"""以下はSAP Interface設計書（{file_name}）のデータ行の一部です。
 各セルは [列番号]値 の形式で表示されています。
 
