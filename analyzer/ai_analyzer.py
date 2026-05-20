@@ -10,6 +10,8 @@ import logging
 import time
 from pathlib import Path
 
+import yaml
+
 from analyzer.sap_client import SAPAICoreClient
 
 logger = logging.getLogger('analyzer')
@@ -18,7 +20,7 @@ logger = logging.getLogger('analyzer')
 _DEFAULT_PHASE1_HEAD_ROWS = 30
 _DEFAULT_MAX_CHUNK_ROWS = 100
 
-_PROMPTS_FILE = Path('prompts.yaml')
+_PROMPTS_FILE = Path(__file__).parent.parent / 'prompts.yaml'
 _templates_cache: dict | None = None
 
 
@@ -28,7 +30,6 @@ def _load_prompt_templates() -> dict:
     if _templates_cache is not None:
         return _templates_cache
     try:
-        import yaml
         with open(_PROMPTS_FILE, encoding='utf-8') as f:
             _templates_cache = yaml.safe_load(f) or {}
     except FileNotFoundError:
@@ -48,7 +49,7 @@ def build_phase1_prompt(sheet_head_text: str, file_name: str) -> str:
     if tmpl:
         try:
             return tmpl.format(file_name=file_name, sheet_head_text=sheet_head_text)
-        except (KeyError, ValueError) as e:
+        except (KeyError, ValueError, IndexError) as e:
             logger.warning(
                 "phase1テンプレートの展開に失敗しました: %s — 内蔵プロンプトを使用します。", e,
             )
@@ -147,8 +148,10 @@ def build_phase2_prompt(doc_number: str, if_name: str,
             return tmpl.format(
                 file_name=file_name, doc_number=doc_number,
                 if_name=if_name, chunk_text=chunk_text,
+                col_table_name=col_table_name, col_table_id=col_table_id,
+                col_item_id=col_item_id, col_digit=col_digit,
             )
-        except (KeyError, ValueError) as e:
+        except (KeyError, ValueError, IndexError) as e:
             logger.warning(
                 "phase2テンプレートの展開に失敗しました: %s — 内蔵プロンプトを使用します。", e,
             )
