@@ -155,3 +155,96 @@ class TestAnalyzeWithRetry:
             with pytest.raises(Exception, match="e2"):
                 analyze_with_retry(client, "prompt", [{}], max_retries=2)
         assert client.converse_with_tools.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests for YAML-based prompt loading
+# ---------------------------------------------------------------------------
+import analyzer.ai_analyzer as ai_module
+
+
+@pytest.fixture(autouse=False)
+def reset_prompt_cache():
+    """Reset the module-level template cache before and after each test."""
+    ai_module._templates_cache = None
+    yield
+    ai_module._templates_cache = None
+
+
+class TestLoadPromptTemplates:
+    """Tests for _load_prompt_templates function."""
+
+    def test_returns_empty_dict_when_file_missing(self, reset_prompt_cache, tmp_path):
+        with patch.object(ai_module, '_PROMPTS_FILE', tmp_path / 'nonexistent.yaml'):
+            result = ai_module._load_prompt_templates()
+        assert result == {}
+
+    def test_returns_templates_when_file_exists(self, reset_prompt_cache, tmp_path):
+        yaml_file = tmp_path / 'prompts.yaml'
+        yaml_file.write_text(
+            'phase1:\n  template: "hello {file_name}"\n', encoding='utf-8'
+        )
+        with patch.object(ai_module, '_PROMPTS_FILE', yaml_file):
+            result = ai_module._load_prompt_templates()
+        assert result['phase1']['template'] == 'hello {file_name}'
+
+    def test_returns_empty_dict_on_invalid_yaml(self, reset_prompt_cache, tmp_path):
+        yaml_file = tmp_path / 'prompts.yaml'
+        yaml_file.write_text('invalid: [yaml:\n  unclosed', encoding='utf-8')
+        with patch.object(ai_module, '_PROMPTS_FILE', yaml_file):
+            result = ai_module._load_prompt_templates()
+        assert result == {}
+
+    def test_caches_result_on_second_call(self, reset_prompt_cache, tmp_path):
+        yaml_file = tmp_path / 'prompts.yaml'
+        yaml_file.write_text('phase1:\n  template: "t"\n', encoding='utf-8')
+        with patch.object(ai_module, '_PROMPTS_FILE', yaml_file):
+            r1 = ai_module._load_prompt_templates()
+            r2 = ai_module._load_prompt_templates()
+        assert r1 is r2
+
+
+class TestBuildPhase1PromptWithYaml:
+    """Tests for build_phase1_prompt using YAML template."""
+
+    def test_uses_yaml_template_when_available(self):
+        tpls = {'phase1': {'template': 'Custom: {file_name} data: {sheet_head_text}'}}
+        with patch.object(ai_module, '_load_prompt_templates', return_value=tpls):
+            result = build_phase1_prompt('rows', 'file.xlsx')
+        assert result == 'Custom: file.xlsx data: rows'
+
+    def test_falls_back_to_builtin_when_yaml_missing(self):
+        with patch.object(ai_module, '_load_prompt_templates', return_value={}):
+            result = build_phase1_prompt('rows', 'file.xlsx')
+        assert 'file.xlsx' in result
+        assert 'rows' in result
+
+    def test_falls_back_when_template_has_unknown_variable(self):
+        tpls = {'phase1': {'template': 'Hello {unknown_var}'}}
+        with patch.object(ai_module, '_load_prompt_templates', return_value=tpls):
+            result = build_phase1_prompt('rows', 'file.xlsx')
+        assert 'file.xlsx' in result
+        assert 'rows' in result
+
+
+class TestBuildPhase2PromptWithYaml:
+    """Tests for build_phase2_prompt using YAML template."""
+
+    def test_uses_yaml_template_when_available(self):
+        tpls = {'phase2': {'template': '{doc_number}|{if_name}|{chunk_text}|{file_name}'}}
+        with patch.object(ai_module, '_load_prompt_templates', return_value=tpls):
+            result = build_phase2_prompt('D001', 'IF1', 'rows', 'f.xlsx')
+        assert result == 'D001|IF1|rows|f.xlsx'
+
+    def test_falls_back_to_builtin_when_yaml_missing(self):
+        with patch.object(ai_module, '_load_prompt_templates', return_value={}):
+            result = build_phase2_prompt('D001', 'IF1', 'rows', 'f.xlsx')
+        assert 'D001' in result
+        assert 'IF1' in result
+
+    def test_falls_back_when_template_has_unknown_variable(self):
+        tpls = {'phase2': {'template': 'Bad {unknown}'}}
+        with patch.object(ai_module, '_load_prompt_templates', return_value=tpls):
+            result = build_phase2_prompt('D001', 'IF1', 'rows', 'f.xlsx')
+        assert 'D001' in result
+        assert 'IF1' in result
