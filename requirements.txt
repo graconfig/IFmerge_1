@@ -6,3 +6,4 @@ hypothesis>=6.0
 xlrd>=1.2.0
 pywin32
 PyYAML>=6.0
+customtkinter>=5.2.0
