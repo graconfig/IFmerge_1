@@ -73,7 +73,6 @@ class AnalyzeTask(threading.Thread):
             self.on_progress(base, f"[{idx}/{total}] " + t("phase.read"))
             self.on_log(t("log.file_header", idx=idx, total=total, name=file_name))
             try:
-                self.on_log(t("log.reading"))
                 sheets = read_excel(file_path)
                 cleaned_sheets = []
                 for sheet in sheets:
@@ -86,7 +85,6 @@ class AnalyzeTask(threading.Thread):
                     continue
 
                 self.on_progress(base, f"[{idx}/{total}] " + t("phase.analyze"))
-                self.on_log(t("log.analyzing"))
                 tool_results = analyze_file(
                     client, cleaned_sheets, file_name,
                     phase1_head_rows=config.phase1_head_rows,
