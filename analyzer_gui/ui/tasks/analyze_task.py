@@ -1,7 +1,6 @@
 """解析后台任务(进程内调用 analyzer,编排镜像自 main.py)。
 
-通过给 'analyzer' logger 挂一个 Handler,把原程序的日志原样转发到 GUI 日志框,
-从而与原工程的日志完全一致。
+日志走 i18n(t()),跟界面语言一致;不直接桥接 analyzer 内部的日语 logger。
 """
 
 import logging
@@ -21,24 +20,9 @@ from analyzer_gui.config.settings import Settings
 from analyzer_gui.core.config_factory import build_config
 from analyzer_gui.i18n import t
 
-# analyzer 各模块都用 logging.getLogger("analyzer"[.xxx]),挂到根 "analyzer" 即可捕获
-_ANALYZER_LOGGER = "analyzer"
-_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+logger = logging.getLogger("analyzer_gui.ui.tasks.analyze")
 
-
-class _LogBridge(logging.Handler):
-    """把 logging 记录转发给 GUI 的 on_log 回调。"""
-
-    def __init__(self, on_log: Callable[[str], None]):
-        super().__init__()
-        self._on_log = on_log
-        self.setFormatter(logging.Formatter(_LOG_FORMAT))
-
-    def emit(self, record):
-        try:
-            self._on_log(self.format(record))
-        except Exception:
-            pass
+_SEP = "=" * 60
 
 
 class AnalyzeTask(threading.Thread):
@@ -62,27 +46,19 @@ class AnalyzeTask(threading.Thread):
         self._cancel = True
 
     def run(self) -> None:
-        logger = logging.getLogger(_ANALYZER_LOGGER)
-        bridge = _LogBridge(self.on_log)
-        prev_level = logger.level
-        logger.setLevel(logging.INFO)
-        logger.addHandler(bridge)
         try:
-            self._run_pipeline(logger)
+            self._run_pipeline()
         except Exception as e:
-            logging.getLogger("analyzer_gui").exception("analyze task failed")
+            logger.exception("analyze task failed")
             self.on_failed(e)
-        finally:
-            logger.removeHandler(bridge)
-            logger.setLevel(prev_level)
 
-    def _run_pipeline(self, logger):
+    def _run_pipeline(self):
         config = build_config(self.settings)
         Path(config.output_dir).mkdir(parents=True, exist_ok=True)
         client = SAPAICoreClient(config)
 
         total = len(self.files)
-        logger.info("Excel ファイルを %d 件検出しました。処理を開始します。", total)
+        self.on_log(t("log.files_found", n=total))
 
         all_records = []
         success_count = 0
@@ -95,8 +71,9 @@ class AnalyzeTask(threading.Thread):
             file_name = file_path.name
             base = int((idx - 1) / total * 100) if total else 0
             self.on_progress(base, f"[{idx}/{total}] " + t("phase.read"))
-            logger.info("Processing file %d/%d: %s", idx, total, file_name)
+            self.on_log(t("log.file_header", idx=idx, total=total, name=file_name))
             try:
+                self.on_log(t("log.reading"))
                 sheets = read_excel(file_path)
                 cleaned_sheets = []
                 for sheet in sheets:
@@ -104,12 +81,12 @@ class AnalyzeTask(threading.Thread):
                     if cleaned is not None:
                         cleaned_sheets.append(cleaned)
                 if not cleaned_sheets:
-                    logger.warning(
-                        "File %s: 全シートが清洗後に空のためスキップします。", file_name)
+                    self.on_log(t("log.empty_sheets", name=file_name))
                     failure_count += 1
                     continue
 
                 self.on_progress(base, f"[{idx}/{total}] " + t("phase.analyze"))
+                self.on_log(t("log.analyzing"))
                 tool_results = analyze_file(
                     client, cleaned_sheets, file_name,
                     phase1_head_rows=config.phase1_head_rows,
@@ -120,8 +97,7 @@ class AnalyzeTask(threading.Thread):
                 for tool_result in tool_results:
                     records.extend(parse_response(tool_result, file_name))
                 all_records.extend(records)
-                logger.info(
-                    "File %s: %d 件のレコードを抽出しました。", file_name, len(records))
+                self.on_log(t("log.extracted", name=file_name, n=len(records)))
 
                 if records:
                     self.on_progress(base, f"[{idx}/{total}] " + t("phase.format"))
@@ -138,13 +114,11 @@ class AnalyzeTask(threading.Thread):
                             output_dir=Path(config.output_dir),
                         )
                     except Exception as fmt_exc:
-                        logger.warning(
-                            "File %s: 新フォーマット出力に失敗しました: %s",
-                            file_name, fmt_exc)
+                        self.on_log(t("log.format_fail", name=file_name, error=fmt_exc))
                 success_count += 1
             except Exception as exc:
-                logger.error(
-                    "File %s の処理中にエラーが発生しました: %s", file_name, exc)
+                logger.exception("analyze file failed")
+                self.on_log(t("log.file_error", name=file_name, error=exc))
                 failure_count += 1
                 continue
 
@@ -156,17 +130,17 @@ class AnalyzeTask(threading.Thread):
         if all_records:
             output_path = write_output_excel(all_records, config.output_dir)
         else:
-            output_path = "(レコードなし — 出力ファイルは生成されませんでした)"
-            logger.warning("抽出レコードが 0 件のため、出力ファイルは生成されませんでした。")
+            output_path = "-"
+            self.on_log(t("log.no_records"))
 
-        logger.info("=" * 60)
-        logger.info("処理完了サマリー")
-        logger.info("  対象ファイル数: %d", total)
-        logger.info("  成功: %d", success_count)
-        logger.info("  失敗: %d", failure_count)
-        logger.info("  抽出レコード数: %d", len(all_records))
-        logger.info("  出力ファイル: %s", output_path)
-        logger.info("=" * 60)
+        self.on_log(_SEP)
+        self.on_log(t("log.summary_title"))
+        self.on_log(t("log.summary_total", total=total))
+        self.on_log(t("log.summary_ok", ok=success_count))
+        self.on_log(t("log.summary_fail", fail=failure_count))
+        self.on_log(t("log.summary_records", n=len(all_records)))
+        self.on_log(t("log.summary_output", path=output_path))
+        self.on_log(_SEP)
 
         self.on_progress(100, t("phase.done"))
         self.on_done(all_records)
