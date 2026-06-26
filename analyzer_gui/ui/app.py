@@ -5,6 +5,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
+from analyzer.runtime import app_data_dir
 from analyzer_gui.config.settings import Settings
 from analyzer_gui.i18n import t, translator
 from analyzer_gui.ui.dialogs.log_viewer import LogViewerDialog
@@ -66,5 +67,6 @@ class AnalyzerApp(ctk.CTk):
     def _on_settings_saved(self, settings: Settings):
         self.settings = settings
         self.settings.save()                            # 持久化到 .env
-        setup_logger(level=self.settings.log_level)      # 日志级别即时生效
+        log_file = str(app_data_dir() / "output" / "analyzer_gui.log")
+        setup_logger(level=self.settings.log_level, log_file=log_file)  # 日志级别即时生效
         self.page.file_output.set_output_dir(self.page.output_dir())

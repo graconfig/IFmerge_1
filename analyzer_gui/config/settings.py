@@ -1,4 +1,4 @@
-"""应用配置（从仓库根 .env 加载/写回）——对应 analyzer.config.AppConfig。"""
+"""应用配置（从可写数据目录的 .env 加载/写回）——对应 analyzer.config.AppConfig。"""
 
 import os
 from dataclasses import dataclass
@@ -6,9 +6,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv, set_key
 
-# .env 固定指向仓库根:settings.py 位于 <root>/analyzer_gui/config/settings.py
-# parents[2] = <root>，与当前工作目录无关。
-_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+from analyzer.runtime import app_data_dir, resource_path
+
+# .env 位于可写数据目录:开发态= 仓库根;打包后= 可执行文件同级目录(可持久化)。
+_ENV_PATH = app_data_dir() / ".env"
 
 
 @dataclass
@@ -38,13 +39,16 @@ class Settings:
     def load(cls) -> "Settings":
         # override=True:.env 为权威来源，覆盖残留系统环境变量。
         load_dotenv(_ENV_PATH, override=True)
+        # 默认值锚定到可写/资源目录的绝对路径，避免打包后相对当前工作目录解析失败。
         return cls(
-            input_dir=os.getenv("INPUT_DIR", "input"),
-            output_dir=os.getenv("OUTPUT_DIR", "output"),
+            input_dir=os.getenv("INPUT_DIR", str(app_data_dir() / "input")),
+            output_dir=os.getenv("OUTPUT_DIR", str(app_data_dir() / "output")),
             template_path=os.getenv(
-                "TEMPLATE_PATH", "reference/IF抽出_新フォーマット.xlsx"),
+                "TEMPLATE_PATH",
+                str(resource_path("reference", "IF抽出_新フォーマット.xlsx"))),
             reference_path=os.getenv(
-                "REFERENCE_PATH", "reference/本社EBS現行IF一覧.xlsx"),
+                "REFERENCE_PATH",
+                str(resource_path("reference", "本社EBS現行IF一覧.xlsx"))),
             phase1_head_rows=int(os.getenv("PHASE1_HEAD_ROWS", "30")),
             max_chunk_rows=int(os.getenv("MAX_CHUNK_ROWS", "100")),
             aicore_auth_url=os.getenv("AICORE_AUTH_URL", ""),

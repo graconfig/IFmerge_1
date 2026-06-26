@@ -9,3 +9,8 @@ venv/
 .env
 __pycache__/
 .idea/
+
+# PyInstaller 打包产物(.spec 文件仍纳入版本管理)
+build/
+dist/
+*.egg-info/

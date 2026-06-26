@@ -3,7 +3,10 @@
 import json
 from pathlib import Path
 
-_LOCALES_DIR = Path(__file__).parent / "locales"
+from analyzer.runtime import resource_path
+
+# 打包后 locales 解压在 sys._MEIPASS/analyzer_gui/i18n/locales(由 ifanalyzer.spec 指定)。
+_LOCALES_DIR = resource_path("analyzer_gui", "i18n", "locales")
 _CONFIG_PATH = Path.home() / ".ifmerge" / "config.json"
 _DEFAULT_LANG = "zh"
 AVAILABLE = {"zh": "中文", "ja": "日本語", "en": "English"}

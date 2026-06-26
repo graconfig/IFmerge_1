@@ -12,6 +12,7 @@ from pathlib import Path
 
 import yaml
 
+from analyzer.runtime import resource_path
 from analyzer.sap_client import SAPAICoreClient
 
 logger = logging.getLogger('analyzer')
@@ -20,7 +21,8 @@ logger = logging.getLogger('analyzer')
 _DEFAULT_PHASE1_HEAD_ROWS = 30
 _DEFAULT_MAX_CHUNK_ROWS = 100
 
-_PROMPTS_FILE = Path(__file__).parent.parent / 'prompts.yaml'
+# 開発態= 仓库根/prompts.yaml;PyInstaller 打包後= sys._MEIPASS/prompts.yaml。
+_PROMPTS_FILE = resource_path('prompts.yaml')
 _templates_cache: dict | None = None
 
 
