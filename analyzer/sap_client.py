@@ -33,7 +33,8 @@ class SAPAICoreClient:
             data={"grant_type": "client_credentials"},
         )
         if response.status_code != 200:
-            raise Exception(f"トークン取得失敗: {response.status_code}")
+            # 言語中立(英語)のエラー詳細。GUI 側で各言語のプレフィックスを付与する。
+            raise Exception(f"Token request failed: HTTP {response.status_code}")
 
         self._access_token = response.json()["access_token"]
         return self._access_token
@@ -70,8 +71,9 @@ class SAPAICoreClient:
 
         response = requests.post(url, headers=headers, json=payload)
         if response.status_code != 200:
+            # 言語中立(英語)のエラー詳細。GUI 側で各言語のプレフィックスを付与する。
             raise Exception(
-                f"API呼び出し失敗: {response.status_code} - {response.text}"
+                f"API request failed: HTTP {response.status_code} - {response.text}"
             )
 
         return response.json()

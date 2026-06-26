@@ -1,5 +1,6 @@
 {
   "app.title": "IF Analyze — EBS Interface Spec Analyze Tool",
+  "sidebar.brand": "IF Analyze",
   "sidebar.logs": "📜 Logs",
   "sidebar.settings": "⚙ Settings",
   "page.run_analyze": "▶ Start Analyze",

@@ -1,5 +1,6 @@
 {
   "app.title": "IF解析 — EBS 設計書 解析ツール",
+  "sidebar.brand": "IF解析",
   "sidebar.logs": "📜 ログ",
   "sidebar.settings": "⚙ 設定",
   "page.run_analyze": "▶ 解析開始",

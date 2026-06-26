@@ -35,7 +35,8 @@ class AnalyzerApp(ctk.CTk):
         bar.grid(row=0, column=0, sticky="nsew")
         bar.grid_rowconfigure(1, weight=1)  # 把日志/设置推到底部
 
-        ctk.CTkLabel(bar, text="IF解析", font=ctk.CTkFont(size=18, weight="bold")
+        ctk.CTkLabel(bar, text=t("sidebar.brand"),
+                     font=ctk.CTkFont(size=18, weight="bold")
                      ).grid(row=0, column=0, padx=16, pady=(16, 12))
 
         ctk.CTkButton(bar, text=t("sidebar.logs"), fg_color="gray",
